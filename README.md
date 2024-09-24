@@ -1,0 +1,2 @@
+# pico-server
+on wifi
