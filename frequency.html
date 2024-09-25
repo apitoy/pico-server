@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audio Frequency Control</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/0.21.1/axios.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; }
+        input, button { font-size: 16px; padding: 5px; }
+        #status { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <h1>Audio Frequency Control</h1>
+    <input type="number" id="frequency" min="20" max="20000" value="1000">
+    <button onclick="updateFrequency()">Update Frequency</button>
+    <div id="status"></div>
+
+    <script>
+        function updateFrequency() {
+            const frequency = document.getElementById('frequency').value;
+            const status = document.getElementById('status');
+            
+            axios.post('http://192.168.0.139/update_frequency', `frequency=${frequency}`)
+                .then(response => {
+                    status.textContent = `Frequency updated to ${frequency} Hz`;
+                })
+                .catch(error => {
+                    status.textContent = `Error: ${error.message}`;
+                });
+        }
+    </script>
+</body>
+</html>
