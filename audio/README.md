@@ -97,9 +97,12 @@ manager.play_file("music.wav")
 
 ```bash
 python disc.py
+python disc_check.py /run/media/tom/RPI-RP2
 python deploy.py ./src --type code
-
- /run/media/tom/RPI-RP2
+cat /run/media/tom/CIRCUITPY/boot_out.txt
+pico-mount-fix.sh
+pico_mount_repair.py
+/run/media/tom/RPI-RP2
 
 
 ```

@@ -19,7 +19,7 @@ class PicoRP2Deployer:
             'timeout': 30,
             'verify_checksum': True,
             'make_backup': True,
-            'allowed_extensions': ['.py', '.txt', '.json', '.uf2'],
+            'allowed_extensions': ['.py', '.txt', '.json', '.uf2', '.wav', '.uf2', '.bin', '.hex', '.hex64', '.hex32', '.elf', '.dfu', '.bl1', '.bl2', '.bin.gz', '.bin.xz', '.bin.bz2', '.bin.lzma', '.bin.zst', '.img', '.img.xz', '.img.bz2', '.img.', '.img.gz', '.img.xz', '.img.bz2', '.img.lzma', '.img.zst', '.img.zip', '.bin.zip', '.mp3'],
             'backup_dir': 'pico_backups',
             'ignore_patterns': ['__pycache__', '*.pyc', '.git', '.vscode'],
         }

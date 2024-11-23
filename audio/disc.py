@@ -173,7 +173,7 @@ class PicoDiskFinder:
                 total_size = st.f_blocks * st.f_frsize
 
             # Pico powinno mieć około 2MB
-            return 1_000_000 < total_size < 130_000_000
+            return 1_000_000 < total_size < 140_000_000
 
         except Exception as e:
             print(f"Błąd podczas weryfikacji dysku: {e}")

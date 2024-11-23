@@ -1,0 +1,4 @@
+Rozpoczęcie wdrażania: 2024-11-23 19:49:27
+Skopiowano: main.py
+Skopiowano: test.wav
+Skopiowano: circuit_python.uf2
