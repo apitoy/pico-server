@@ -47,25 +47,25 @@ class PicoDeployer:
         print("📦 Konfiguracja MicroPython...")
 
         # Pobierz firmware
-        firmware_path = self.download_firmware('micropython')
+        firmware_path = self.get_firmware_path('micropython')
         if not firmware_path:
-            return False
-
-        # Skopiuj firmware
-        if not self.flash_firmware(firmware_path):
-            return False
+            firmware_path = self.download_firmware('micropython')
 
         # Przygotuj podstawowe pliki
-
         try:
             if self.mount_point:
+                # print(f"📤 Wgrywanie firmware...")
+                self.copy_file(firmware_path)
                 self.copy_file(os.path.join(SRC, 'boot.py'))
                 self.copy_file(os.path.join(SRC, 'main.py'))
-                self.copy_file(os.path.join(SRC, 'requirements.txt'))
+                # self.copy_file(os.path.join(SRC, 'requirements.txt'))
+                # self.copy_file(os.path.join(SRC, 'test.wav'))
             return True
         except Exception as e:
-            print(f"❌ Błąd podczas kopiowania plików: {e}")
+            print(f"❌ {e}")
             return False
+
+
 
     def setup_arduino(self):
         """Konfiguracja Arduino"""
@@ -205,14 +205,17 @@ int main() {
             print(f"❌ Błąd podczas konfiguracji C/C++ SDK: {e}")
             return False
 
-    def download_firmware(self, firmware_type: str) -> Optional[Path]:
+    def get_firmware_path(self, firmware_type: str) -> Optional[Path]:
         """Pobierz firmware wybranego typu"""
         if firmware_type not in self.firmware_urls:
             print(f"❌ Nieznany typ firmware: {firmware_type}")
             return None
 
+        return f"{firmware_type}_firmware.uf2"
+
+    def download_firmware(self, firmware_type: str) -> Optional[Path]:
         url = self.firmware_urls[firmware_type]
-        filename = f"{firmware_type}_firmware.uf2"
+        filename = self.get_firmware_path(firmware_type)
 
         try:
             print(f"📥 Pobieranie firmware {firmware_type}...")
@@ -229,22 +232,7 @@ int main() {
             print(f"❌ Błąd podczas pobierania firmware: {e}")
             return None
 
-    def flash_firmware(self, firmware_path: Path) -> bool:
-        """Wgraj firmware na Pico"""
-        if not self.mount_point:
-            print("❌ Nie znaleziono punktu montowania RPI-RP2")
-            print("Podłącz Pico w trybie bootloader (trzymając BOOTSEL)")
-            return False
 
-        try:
-            print(f"📤 Wgrywanie firmware...")
-            shutil.copy2(firmware_path, self.mount_point)
-            print("✅ Firmware wgrany pomyślnie")
-            return True
-
-        except Exception as e:
-            print(f"❌ Błąd podczas wgrywania firmware: {e}")
-            return False
 
     def copy_file(self, code_path: Path) -> bool:
         """Wgraj firmware na Pico"""
@@ -254,7 +242,7 @@ int main() {
             return False
 
         try:
-            print(f"📤 Wgrywanie kodu, requirements, ...")
+            print(f"📤 {code_path} to {self.mount_point}")
             shutil.copy2(code_path, self.mount_point)
             print("✅ ")
             return True
@@ -283,13 +271,13 @@ int main() {
 def main():
     deployer = PicoDeployer()
 
-    print("Wybierz system do wdrożenia:")
-    print("1. MicroPython")
-    print("2. Arduino")
-    print("3. C/C++ SDK")
+    # print("Wybierz system do wdrożenia:")
+    # print("1. MicroPython")
+    # print("2. Arduino")
+    # print("3. C/C++ SDK")
 
-    choice = input("Wybór (1-3): ")
-
+    # choice = input("Wybór (1-3): ")
+    choice="1"
     if choice == "1":
         deployer.deploy("micropython")
     elif choice == "2":

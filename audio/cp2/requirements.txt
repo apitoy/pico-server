@@ -1,0 +1,4 @@
+# requirements.txt - biblioteki do zainstalowania na Pico
+network          # Do obsługi WiFi
+usb_hid         # Do emulacji myszy USB
+json            # Do obsługi JSON

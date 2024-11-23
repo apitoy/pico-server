@@ -1,0 +1,4 @@
+CIRCUITPY_USB_HID = 1             # Włącz USB HID
+CIRCUITPY_USB_MSC = 0             # Wyłącz pamięć masową USB
+CIRCUITPY_WIFI_SSID = ""          # SSID sieci WiFi (opcjonalne)
+CIRCUITPY_WIFI_PASSWORD = ""      # Hasło WiFi (opcjonalne)
