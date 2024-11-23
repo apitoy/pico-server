@@ -1,251 +1,307 @@
-# !/usr/bin/env python3
 import os
 import sys
 import time
 import shutil
-import hashlib
-from pathlib import Path
-from typing import Optional, Dict, List
+import requests
 import subprocess
+from pathlib import Path
+from typing import Optional, List, Dict
 import json
-from disc import PicoDiskFinder
 
-class PicoRP2Deployer:
+
+class PicoDeployer:
     def __init__(self):
-        self.finder = PicoDiskFinder()  # z poprzedniego kodu
-        self.rp2_path = None
-        self.deployment_log = []
-        self.config = {
-            'timeout': 30,
-            'verify_checksum': True,
-            'make_backup': True,
-            'allowed_extensions': ['.py', '.txt', '.json', '.uf2', '.wav', '.uf2', '.bin', '.hex', '.hex64', '.hex32', '.elf', '.dfu', '.bl1', '.bl2', '.bin.gz', '.bin.xz', '.bin.bz2', '.bin.lzma', '.bin.zst', '.img', '.img.xz', '.img.bz2', '.img.', '.img.gz', '.img.xz', '.img.bz2', '.img.lzma', '.img.zst', '.img.zip', '.bin.zip', '.mp3'],
-            'backup_dir': 'pico_backups',
-            'ignore_patterns': ['__pycache__', '*.pyc', '.git', '.vscode'],
+        self.system_type = None
+        self.firmware_urls = {
+            'micropython': 'https://micropython.org/resources/firmware/RPI_PICO-20240105-v1.22.1.uf2',
+            'circuitpython': 'https://downloads.circuitpython.org/bin/raspberry_pi_pico/en_US/adafruit-circuitpython-raspberry_pi_pico-en_US-8.2.0.uf2',
+            'arduino': 'https://github.com/earlephilhower/arduino-pico/releases/download/global/index.json'
         }
+        self.sdk_path = Path('pico-sdk')
+        self.mount_point = None
+        self.find_mount_point()
 
-    def prepare_deployment(self) -> bool:
-        """Przygotowanie do wdrożenia"""
-        print("🔍 Szukam dysku RPI-RP2...")
+    def find_mount_point(self):
+        """Znajdź punkt montowania RPI-RP2"""
+        possible_paths = [
+            '/run/media/*/RPI-RP2',  # Linux
+            '/Volumes/RPI-RP2',  # macOS
+            'D:/RPI-RP2',  # Windows
+            'E:/RPI-RP2'
+        ]
+
+        for path in possible_paths:
+            if '*' in path:
+                from glob import glob
+                paths = glob(path)
+                if paths:
+                    self.mount_point = paths[0]
+                    return
+            elif os.path.exists(path):
+                self.mount_point = path
+                return
+
+    def setup_micropython(self):
+        """Konfiguracja MicroPython"""
+        print("📦 Konfiguracja MicroPython...")
+
+        # Pobierz firmware
+        firmware_path = self.download_firmware('micropython')
+        if not firmware_path:
+            return False
+
+        # Skopiuj firmware
+        if not self.flash_firmware(firmware_path):
+            return False
+
+        # Przygotuj podstawowe pliki
+        main_code = """
+import machine
+import time
+
+# Konfiguracja LED
+led = machine.Pin(25, machine.Pin.OUT)
+
+# Główna pętla
+while True:
+    led.toggle()
+    time.sleep(0.5)
+"""
+
+        boot_code = """
+# boot.py - wykonywany przy starcie
+import machine
+import time
+
+# Konfiguracja podstawowa
+machine.freq(250000000)  # Ustaw częstotliwość CPU na 250MHz
+"""
 
         try:
-            self.rp2_path = self.finder.wait_for_rp2(timeout=self.config['timeout'])
-            if not self.rp2_path:
-                print("❌ Nie znaleziono dysku RPI-RP2!")
-                return False
+            if self.mount_point:
+                with open(os.path.join(self.mount_point, 'main.py'), 'w') as f:
+                    f.write(main_code)
+                with open(os.path.join(self.mount_point, 'boot.py'), 'w') as f:
+                    f.write(boot_code)
+            return True
+        except Exception as e:
+            print(f"❌ Błąd podczas tworzenia plików: {e}")
+            return False
 
-            print(f"✅ Znaleziono dysk RPI-RP2: {self.rp2_path}")
+    def setup_arduino(self):
+        """Konfiguracja Arduino"""
+        print("🔧 Konfiguracja Arduino...")
 
-            if not self.finder.verify_rp2_disk(self.rp2_path):
-                print("❌ Weryfikacja dysku nie powiodła się!")
-                return False
+        # Arduino wymaga instalacji Arduino IDE i board manager
+        arduino_code = """
+// Arduino code for Pico
+const int LED_PIN = 25;
 
-            if self.config['make_backup']:
-                self.create_backup()
+void setup() {
+    pinMode(LED_PIN, OUTPUT);
+}
 
+void loop() {
+    digitalWrite(LED_PIN, HIGH);
+    delay(500);
+    digitalWrite(LED_PIN, LOW);
+    delay(500);
+}
+"""
+
+        try:
+            # Utwórz katalog projektu
+            project_dir = Path('pico_arduino')
+            project_dir.mkdir(exist_ok=True)
+
+            # Utwórz plik .ino
+            with open(project_dir / 'pico_arduino.ino', 'w') as f:
+                f.write(arduino_code)
+
+            print("""
+🔔 Aby skompilować i wgrać kod Arduino:
+1. Otwórz Arduino IDE
+2. Zainstaluj wsparcie dla Pico:
+   - Otwórz Boards Manager
+   - Wyszukaj "raspberry pi pico"
+   - Zainstaluj "Raspberry Pi Pico/RP2040"
+3. Wybierz płytkę: Tools -> Board -> Raspberry Pi Pico
+4. Otwórz utworzony plik i wgraj kod
+""")
             return True
 
         except Exception as e:
-            print(f"❌ Błąd podczas przygotowania: {e}")
+            print(f"❌ Błąd podczas konfiguracji Arduino: {e}")
             return False
 
-    def create_backup(self):
-        """Tworzenie kopii zapasowej zawartości Pico"""
-        try:
-            timestamp = time.strftime("%Y%m%d_%H%M%S")
-            backup_dir = Path(self.config['backup_dir']) / timestamp
-            backup_dir.mkdir(parents=True, exist_ok=True)
+    def setup_c_sdk(self):
+        """Konfiguracja C/C++ SDK"""
+        print("🛠️ Konfiguracja C/C++ SDK...")
 
-            print(f"📂 Tworzenie kopii zapasowej w: {backup_dir}")
+        # Sklonuj SDK jeśli nie istnieje
+        if not self.sdk_path.exists():
+            try:
+                subprocess.run([
+                    'git', 'clone',
+                    'https://github.com/raspberrypi/pico-sdk.git',
+                    str(self.sdk_path)
+                ], check=True)
 
-            # Kopiowanie plików
-            for item in Path(self.rp2_path).iterdir():
-                if item.is_file():
-                    shutil.copy2(item, backup_dir)
-                else:
-                    shutil.copytree(item, backup_dir / item.name)
-
-            # Zapisz metadane
-            metadata = {
-                'timestamp': timestamp,
-                'source': str(self.rp2_path),
-                'files': [str(f.relative_to(backup_dir)) for f in backup_dir.rglob('*') if f.is_file()]
-            }
-
-            with open(backup_dir / 'backup_metadata.json', 'w') as f:
-                json.dump(metadata, f, indent=2)
-
-            print(f"✅ Kopia zapasowa utworzona: {len(metadata['files'])} plików")
-
-        except Exception as e:
-            print(f"⚠️ Błąd podczas tworzenia kopii zapasowej: {e}")
-
-    def calculate_checksum(self, file_path: Path) -> str:
-        """Obliczanie sumy kontrolnej pliku"""
-        hash_md5 = hashlib.md5()
-        with open(file_path, "rb") as f:
-            for chunk in iter(lambda: f.read(4096), b""):
-                hash_md5.update(chunk)
-        return hash_md5.hexdigest()
-
-    def verify_deployment(self, source_files: Dict[str, str], deployed_path: Path) -> bool:
-        """Weryfikacja poprawności wdrożenia"""
-        print("🔍 Weryfikacja wdrożenia...")
-        errors = []
-
-        for rel_path, checksum in source_files.items():
-            deployed_file = deployed_path / rel_path
-            if not deployed_file.exists():
-                errors.append(f"Brak pliku: {rel_path}")
-                continue
-
-            deployed_checksum = self.calculate_checksum(deployed_file)
-            if deployed_checksum != checksum:
-                errors.append(f"Niezgodność sumy kontrolnej: {rel_path}")
-
-        if errors:
-            print("❌ Znaleziono błędy podczas weryfikacji:")
-            for error in errors:
-                print(f"  - {error}")
-            return False
-
-        print("✅ Weryfikacja zakończona sukcesem")
-        return True
-
-    def deploy(self, source_path: str or Path, deploy_type: str = 'all') -> bool:
-        """Wdrożenie plików na Pico"""
-        source_path = Path(source_path)
-        if not source_path.exists():
-            print(f"❌ Ścieżka źródłowa nie istnieje: {source_path}")
-            return False
-
-        try:
-            # Przygotowanie
-            if not self.prepare_deployment():
+                # Inicjalizacja submodułów
+                subprocess.run([
+                    'git', 'submodule', 'update', '--init'
+                ], cwd=str(self.sdk_path), check=True)
+            except Exception as e:
+                print(f"❌ Błąd podczas pobierania SDK: {e}")
                 return False
 
-            print(f"\n📤 Rozpoczynam wdrażanie z: {source_path}")
-            self.deployment_log.append(f"Rozpoczęcie wdrażania: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+        # Przygotuj przykładowy projekt
+        project_dir = Path('pico_c_project')
+        project_dir.mkdir(exist_ok=True)
 
-            # Zbierz pliki do wdrożenia
-            files_to_deploy = {}
-            total_size = 0
+        # CMakeLists.txt
+        cmake_content = """
+cmake_minimum_required(VERSION 3.12)
 
-            for file_path in source_path.rglob('*'):
-                if file_path.is_file():
-                    # Sprawdź czy plik powinien być pominięty
-                    if any(pattern in str(file_path) for pattern in self.config['ignore_patterns']):
-                        continue
+include(pico_sdk_import.cmake)
 
-                    # Sprawdź rozszerzenie
-                    if deploy_type != 'all' and file_path.suffix not in self.config['allowed_extensions']:
-                        continue
+project(pico_project)
 
-                    rel_path = file_path.relative_to(source_path)
-                    files_to_deploy[str(rel_path)] = self.calculate_checksum(file_path)
-                    total_size += file_path.stat().st_size
+pico_sdk_init()
 
-            # Sprawdź dostępne miejsce
-            disk_info = self.finder.get_disk_info(self.rp2_path)
-            if total_size > disk_info['free_space']:
-                print(
-                    f"❌ Za mało miejsca na dysku! Potrzebne: {total_size / 1024:.1f}KB, Dostępne: {disk_info['free_space'] / 1024:.1f}KB")
-                return False
+add_executable(main
+    main.c
+)
 
-            print(f"\n📦 Znaleziono {len(files_to_deploy)} plików do wdrożenia ({total_size / 1024:.1f}KB)")
+target_link_libraries(main pico_stdlib)
+pico_add_extra_outputs(main)
+"""
 
-            # Wdrażanie plików
-            for rel_path, checksum in files_to_deploy.items():
-                source_file = source_path / rel_path
-                target_file = Path(self.rp2_path) / rel_path
+        # main.c
+        c_code = """
+#include "pico/stdlib.h"
 
-                # Utwórz katalogi jeśli nie istnieją
-                target_file.parent.mkdir(parents=True, exist_ok=True)
+int main() {
+    const uint LED_PIN = PICO_DEFAULT_LED_PIN;
+    gpio_init(LED_PIN);
+    gpio_set_dir(LED_PIN, GPIO_OUT);
 
-                # Kopiuj plik
-                print(f"📄 Kopiowanie: {rel_path}")
-                shutil.copy2(source_file, target_file)
-                self.deployment_log.append(f"Skopiowano: {rel_path}")
+    while (true) {
+        gpio_put(LED_PIN, 1);
+        sleep_ms(500);
+        gpio_put(LED_PIN, 0);
+        sleep_ms(500);
+    }
+}
+"""
 
-            # Weryfikacja
-            if self.config['verify_checksum']:
-                if not self.verify_deployment(files_to_deploy, Path(self.rp2_path)):
-                    return False
+        try:
+            # Zapisz pliki projektu
+            with open(project_dir / 'CMakeLists.txt', 'w') as f:
+                f.write(cmake_content)
+            with open(project_dir / 'main.c', 'w') as f:
+                f.write(c_code)
 
-            print("\n✅ Wdrożenie zakończone sukcesem!")
-            self.save_deployment_log()
+            # Skopiuj pico_sdk_import.cmake
+            shutil.copy(
+                self.sdk_path / 'external' / 'pico_sdk_import.cmake',
+                project_dir / 'pico_sdk_import.cmake'
+            )
+
+            print("""
+🔔 Aby skompilować projekt C/C++:
+1. Przejdź do katalogu projektu
+2. Utwórz i przejdź do katalogu build:
+   mkdir build
+   cd build
+3. Uruchom cmake:
+   cmake ..
+4. Skompiluj:
+   make
+5. Wgraj plik .uf2 na Pico w trybie bootloader
+""")
             return True
 
         except Exception as e:
-            print(f"❌ Błąd podczas wdrażania: {e}")
-            self.deployment_log.append(f"Błąd: {str(e)}")
-            self.save_deployment_log()
+            print(f"❌ Błąd podczas konfiguracji C/C++ SDK: {e}")
             return False
 
-    def save_deployment_log(self):
-        """Zapisywanie logu wdrożenia"""
-        log_dir = Path('deployment_logs')
-        log_dir.mkdir(exist_ok=True)
+    def download_firmware(self, firmware_type: str) -> Optional[Path]:
+        """Pobierz firmware wybranego typu"""
+        if firmware_type not in self.firmware_urls:
+            print(f"❌ Nieznany typ firmware: {firmware_type}")
+            return None
 
-        timestamp = time.strftime("%Y%m%d_%H%M%S")
-        log_file = log_dir / f"deploy_log_{timestamp}.txt"
+        url = self.firmware_urls[firmware_type]
+        filename = f"{firmware_type}_firmware.uf2"
 
-        with open(log_file, 'w') as f:
-            for entry in self.deployment_log:
-                f.write(f"{entry}\n")
+        try:
+            print(f"📥 Pobieranie firmware {firmware_type}...")
+            response = requests.get(url, stream=True)
+            response.raise_for_status()
 
-    def deploy_uf2(self, uf2_path: str or Path) -> bool:
-        """Wdrożenie pliku UF2"""
-        uf2_path = Path(uf2_path)
-        if not uf2_path.exists() or uf2_path.suffix != '.uf2':
-            print("❌ Nieprawidłowy plik UF2")
+            with open(filename, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+
+            return Path(filename)
+
+        except Exception as e:
+            print(f"❌ Błąd podczas pobierania firmware: {e}")
+            return None
+
+    def flash_firmware(self, firmware_path: Path) -> bool:
+        """Wgraj firmware na Pico"""
+        if not self.mount_point:
+            print("❌ Nie znaleziono punktu montowania RPI-RP2")
+            print("Podłącz Pico w trybie bootloader (trzymając BOOTSEL)")
             return False
 
         try:
-            if not self.prepare_deployment():
-                return False
-
-            print(f"\n📤 Wdrażanie pliku UF2: {uf2_path.name}")
-
-            # Kopiuj plik UF2
-            target_path = Path(self.rp2_path) / uf2_path.name
-            shutil.copy2(uf2_path, target_path)
-
-            print("✅ Plik UF2 skopiowany. Pico powinno się zrestartować.")
+            print(f"📤 Wgrywanie firmware...")
+            shutil.copy2(firmware_path, self.mount_point)
+            print("✅ Firmware wgrany pomyślnie")
             return True
 
         except Exception as e:
-            print(f"❌ Błąd podczas wdrażania UF2: {e}")
+            print(f"❌ Błąd podczas wgrywania firmware: {e}")
+            return False
+
+    def deploy(self, system_type: str):
+        """Główna metoda wdrażania"""
+        self.system_type = system_type
+
+        print(f"🚀 Rozpoczynam wdrażanie systemu: {system_type}")
+
+        if system_type == "micropython":
+            return self.setup_micropython()
+        elif system_type == "arduino":
+            return self.setup_arduino()
+        elif system_type == "c_sdk":
+            return self.setup_c_sdk()
+        else:
+            print(f"❌ Nieobsługiwany typ systemu: {system_type}")
             return False
 
 
 def main():
-    import argparse
+    deployer = PicoDeployer()
 
-    parser = argparse.ArgumentParser(description="Narzędzie do wdrażania na Raspberry Pi Pico (RPI-RP2)")
-    parser.add_argument("source", help="Ścieżka źródłowa do wdrożenia")
-    parser.add_argument("--type", choices=['all', 'code', 'uf2'], default='all',
-                        help="Typ wdrożenia (domyślnie: all)")
-    parser.add_argument("--no-backup", action="store_true",
-                        help="Wyłącz tworzenie kopii zapasowej")
-    parser.add_argument("--no-verify", action="store_true",
-                        help="Wyłącz weryfikację wdrożenia")
+    print("Wybierz system do wdrożenia:")
+    print("1. MicroPython")
+    print("2. Arduino")
+    print("3. C/C++ SDK")
 
-    args = parser.parse_args()
+    choice = input("Wybór (1-3): ")
 
-    deployer = PicoRP2Deployer()
-
-    # Konfiguracja na podstawie argumentów
-    deployer.config['make_backup'] = not args.no_backup
-    deployer.config['verify_checksum'] = not args.no_verify
-
-    # Wdrożenie
-    if args.type == 'uf2':
-        success = deployer.deploy_uf2(args.source)
+    if choice == "1":
+        deployer.deploy("micropython")
+    elif choice == "2":
+        deployer.deploy("arduino")
+    elif choice == "3":
+        deployer.deploy("c_sdk")
     else:
-        success = deployer.deploy(args.source, args.type)
-
-    sys.exit(0 if success else 1)
+        print("❌ Nieprawidłowy wybór")
 
 
 if __name__ == "__main__":

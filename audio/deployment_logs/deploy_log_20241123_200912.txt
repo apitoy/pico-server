@@ -1,0 +1,3 @@
+Rozpoczęcie wdrażania: 2024-11-23 20:09:02
+Skopiowano: circuit_python.uf2
+Skopiowano: code.py
