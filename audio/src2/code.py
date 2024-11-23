@@ -1,15 +1,19 @@
-# CircuitPython basic example
-import board
-import digitalio
-import time
+from machine import Pin, Timer
 
-# LED na płytce
-led = digitalio.DigitalInOut(board.LED)
-led.direction = digitalio.Direction.OUTPUT
+timer = Timer()
+led = Pin(15, Pin.OUT)
+led2 = Pin(3, Pin.OUT)
+led3 = Pin(4, Pin.OUT)
+led4 = Pin(5, Pin.OUT)
+led.value(1)
+led2.value(1)
+led3.value(0)
+led4.value(0)
 
-# Główna pętla
-while True:
-    led.value = True    # LED włączony
-    time.sleep(0.5)     # Czekaj 0.5s
-    led.value = False   # LED wyłączony
-    time.sleep(0.5)     # Czekaj 0.5s
+
+def blink(timer):
+    led.toggle()
+    led2.toggle()
+
+
+timer.init(freq=2, mode=Timer.PERIODIC, callback=blink)

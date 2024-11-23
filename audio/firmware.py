@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Optional, List, Dict
 import json
 
+SRC='src2'
 
 class PicoDeployer:
     def __init__(self):
@@ -58,9 +59,9 @@ class PicoDeployer:
 
         try:
             if self.mount_point:
-                self.copy_file(os.path.join('src', 'boot.py'))
-                self.copy_file(os.path.join('src', 'main.py'))
-                self.copy_file(os.path.join('src', 'requirements.txt'))
+                self.copy_file(os.path.join(SRC, 'boot.py'))
+                self.copy_file(os.path.join(SRC, 'main.py'))
+                self.copy_file(os.path.join(SRC, 'requirements.txt'))
             return True
         except Exception as e:
             print(f"❌ Błąd podczas kopiowania plików: {e}")
