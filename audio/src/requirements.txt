@@ -1,0 +1,11 @@
+# Podstawowe biblioteki dla Pico
+circuitpython>=8.2.0
+adafruit-circuitpython-usb-audio>=1.2.0
+adafruit-circuitpython-usb-hid>=3.4.0
+adafruit-circuitpython-storage>=1.3.0
+adafruit-circuitpython-wave>=1.2.0
+
+# Biblioteki audio
+audiocore>=1.2.0
+audiobusio>=1.3.0
+audioio>=1.3.0

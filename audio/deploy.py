@@ -1,24 +1,15 @@
+# !/usr/bin/env python3
 import os
 import sys
 import time
 import shutil
-import requests
-import subprocess
+import argparse
 from pathlib import Path
-from typing import Optional, List, Dict
-import json
+from typing import Optional, List
 
 
-class PicoDeployer:
+class PicoCustomDeployer:
     def __init__(self):
-        self.system_type = None
-        self.firmware_urls = {
-            'micropython': 'https://micropython.org/resources/firmware/RPI_PICO-20240105-v1.22.1.uf2',
-            'circuitpython': 'https://downloads.circuitpython.org/bin/raspberry_pi_pico/en_US/adafruit-circuitpython-raspberry_pi_pico-en_US-8.2.0.uf2',
-            'arduino': 'https://github.com/earlephilhower/arduino-pico/releases/download/global/index.json'
-        }
-        self.sdk_path = Path('pico-sdk')
-        self.mount_point = None
         self.find_mount_point()
 
     def find_mount_point(self):
@@ -41,267 +32,110 @@ class PicoDeployer:
                 self.mount_point = path
                 return
 
-    def setup_micropython(self):
-        """Konfiguracja MicroPython"""
-        print("📦 Konfiguracja MicroPython...")
+        self.mount_point = None
 
-        # Pobierz firmware
-        firmware_path = self.download_firmware('micropython')
-        if not firmware_path:
-            return False
+    def deploy_code(self, source_path: str or Path, main_file: str = 'main.py'):
+        """Wdróż kod na Pico"""
+        source_path = Path(source_path)
 
-        # Skopiuj firmware
-        if not self.flash_firmware(firmware_path):
-            return False
-
-        # Przygotuj podstawowe pliki
-        main_code = """
-import machine
-import time
-
-# Konfiguracja LED
-led = machine.Pin(25, machine.Pin.OUT)
-
-# Główna pętla
-while True:
-    led.toggle()
-    time.sleep(0.5)
-"""
-
-        boot_code = """
-# boot.py - wykonywany przy starcie
-import machine
-import time
-
-# Konfiguracja podstawowa
-machine.freq(250000000)  # Ustaw częstotliwość CPU na 250MHz
-"""
-
-        try:
-            if self.mount_point:
-                with open(os.path.join(self.mount_point, 'main.py'), 'w') as f:
-                    f.write(main_code)
-                with open(os.path.join(self.mount_point, 'boot.py'), 'w') as f:
-                    f.write(boot_code)
-            return True
-        except Exception as e:
-            print(f"❌ Błąd podczas tworzenia plików: {e}")
-            return False
-
-    def setup_arduino(self):
-        """Konfiguracja Arduino"""
-        print("🔧 Konfiguracja Arduino...")
-
-        # Arduino wymaga instalacji Arduino IDE i board manager
-        arduino_code = """
-// Arduino code for Pico
-const int LED_PIN = 25;
-
-void setup() {
-    pinMode(LED_PIN, OUTPUT);
-}
-
-void loop() {
-    digitalWrite(LED_PIN, HIGH);
-    delay(500);
-    digitalWrite(LED_PIN, LOW);
-    delay(500);
-}
-"""
-
-        try:
-            # Utwórz katalog projektu
-            project_dir = Path('pico_arduino')
-            project_dir.mkdir(exist_ok=True)
-
-            # Utwórz plik .ino
-            with open(project_dir / 'pico_arduino.ino', 'w') as f:
-                f.write(arduino_code)
-
-            print("""
-🔔 Aby skompilować i wgrać kod Arduino:
-1. Otwórz Arduino IDE
-2. Zainstaluj wsparcie dla Pico:
-   - Otwórz Boards Manager
-   - Wyszukaj "raspberry pi pico"
-   - Zainstaluj "Raspberry Pi Pico/RP2040"
-3. Wybierz płytkę: Tools -> Board -> Raspberry Pi Pico
-4. Otwórz utworzony plik i wgraj kod
-""")
-            return True
-
-        except Exception as e:
-            print(f"❌ Błąd podczas konfiguracji Arduino: {e}")
-            return False
-
-    def setup_c_sdk(self):
-        """Konfiguracja C/C++ SDK"""
-        print("🛠️ Konfiguracja C/C++ SDK...")
-
-        # Sklonuj SDK jeśli nie istnieje
-        if not self.sdk_path.exists():
-            try:
-                subprocess.run([
-                    'git', 'clone',
-                    'https://github.com/raspberrypi/pico-sdk.git',
-                    str(self.sdk_path)
-                ], check=True)
-
-                # Inicjalizacja submodułów
-                subprocess.run([
-                    'git', 'submodule', 'update', '--init'
-                ], cwd=str(self.sdk_path), check=True)
-            except Exception as e:
-                print(f"❌ Błąd podczas pobierania SDK: {e}")
-                return False
-
-        # Przygotuj przykładowy projekt
-        project_dir = Path('pico_c_project')
-        project_dir.mkdir(exist_ok=True)
-
-        # CMakeLists.txt
-        cmake_content = """
-cmake_minimum_required(VERSION 3.12)
-
-include(pico_sdk_import.cmake)
-
-project(pico_project)
-
-pico_sdk_init()
-
-add_executable(main
-    main.c
-)
-
-target_link_libraries(main pico_stdlib)
-pico_add_extra_outputs(main)
-"""
-
-        # main.c
-        c_code = """
-#include "pico/stdlib.h"
-
-int main() {
-    const uint LED_PIN = PICO_DEFAULT_LED_PIN;
-    gpio_init(LED_PIN);
-    gpio_set_dir(LED_PIN, GPIO_OUT);
-
-    while (true) {
-        gpio_put(LED_PIN, 1);
-        sleep_ms(500);
-        gpio_put(LED_PIN, 0);
-        sleep_ms(500);
-    }
-}
-"""
-
-        try:
-            # Zapisz pliki projektu
-            with open(project_dir / 'CMakeLists.txt', 'w') as f:
-                f.write(cmake_content)
-            with open(project_dir / 'main.c', 'w') as f:
-                f.write(c_code)
-
-            # Skopiuj pico_sdk_import.cmake
-            shutil.copy(
-                self.sdk_path / 'external' / 'pico_sdk_import.cmake',
-                project_dir / 'pico_sdk_import.cmake'
-            )
-
-            print("""
-🔔 Aby skompilować projekt C/C++:
-1. Przejdź do katalogu projektu
-2. Utwórz i przejdź do katalogu build:
-   mkdir build
-   cd build
-3. Uruchom cmake:
-   cmake ..
-4. Skompiluj:
-   make
-5. Wgraj plik .uf2 na Pico w trybie bootloader
-""")
-            return True
-
-        except Exception as e:
-            print(f"❌ Błąd podczas konfiguracji C/C++ SDK: {e}")
-            return False
-
-    def download_firmware(self, firmware_type: str) -> Optional[Path]:
-        """Pobierz firmware wybranego typu"""
-        if firmware_type not in self.firmware_urls:
-            print(f"❌ Nieznany typ firmware: {firmware_type}")
-            return None
-
-        url = self.firmware_urls[firmware_type]
-        filename = f"{firmware_type}_firmware.uf2"
-
-        try:
-            print(f"📥 Pobieranie firmware {firmware_type}...")
-            response = requests.get(url, stream=True)
-            response.raise_for_status()
-
-            with open(filename, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    f.write(chunk)
-
-            return Path(filename)
-
-        except Exception as e:
-            print(f"❌ Błąd podczas pobierania firmware: {e}")
-            return None
-
-    def flash_firmware(self, firmware_path: Path) -> bool:
-        """Wgraj firmware na Pico"""
         if not self.mount_point:
             print("❌ Nie znaleziono punktu montowania RPI-RP2")
             print("Podłącz Pico w trybie bootloader (trzymając BOOTSEL)")
             return False
 
         try:
-            print(f"📤 Wgrywanie firmware...")
-            shutil.copy2(firmware_path, self.mount_point)
-            print("✅ Firmware wgrany pomyślnie")
+            print(f"\n📂 Wdrażanie kodu z: {source_path}")
+
+            # Jeśli source_path jest plikiem
+            if source_path.is_file():
+                print(f"📄 Kopiowanie pliku {source_path.name} jako {main_file}")
+                shutil.copy2(source_path, os.path.join(self.mount_point, main_file))
+                return True
+
+            # Jeśli source_path jest katalogiem
+            if source_path.is_dir():
+                print("📁 Kopiowanie zawartości katalogu...")
+                files_copied = 0
+
+                # Lista plików do pominięcia
+                ignore_patterns = ['__pycache__', '*.pyc', '.git', '.vscode']
+
+                for item in source_path.rglob('*'):
+                    # Pomiń pliki/katalogi zgodne z ignore_patterns
+                    if any(pattern in str(item) for pattern in ignore_patterns):
+                        continue
+
+                    # Ścieżka względna
+                    rel_path = item.relative_to(source_path)
+                    target_path = Path(self.mount_point) / rel_path
+
+                    if item.is_file():
+                        # Utwórz katalogi docelowe jeśli nie istnieją
+                        target_path.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(item, target_path)
+                        print(f"  ✓ {rel_path}")
+                        files_copied += 1
+
+                print(f"\n✅ Skopiowano {files_copied} plików")
+                return True
+
+        except Exception as e:
+            print(f"❌ Błąd podczas wdrażania kodu: {e}")
+            return False
+
+    def verify_deployment(self, source_path: Path) -> bool:
+        """Weryfikuj wdrożenie"""
+        try:
+            print("\n🔍 Weryfikacja wdrożenia...")
+
+            if source_path.is_file():
+                # Sprawdź pojedynczy plik
+                target_file = Path(self.mount_point) / source_path.name
+                if not target_file.exists():
+                    print(f"❌ Brak pliku: {source_path.name}")
+                    return False
+
+                # Sprawdź rozmiar
+                if target_file.stat().st_size != source_path.stat().st_size:
+                    print(f"❌ Niezgodność rozmiaru pliku: {source_path.name}")
+                    return False
+
+            else:
+                # Sprawdź wszystkie pliki
+                for source_file in source_path.rglob('*'):
+                    if source_file.is_file():
+                        rel_path = source_file.relative_to(source_path)
+                        target_file = Path(self.mount_point) / rel_path
+
+                        if not target_file.exists():
+                            print(f"❌ Brak pliku: {rel_path}")
+                            return False
+
+                        if target_file.stat().st_size != source_file.stat().st_size:
+                            print(f"❌ Niezgodność rozmiaru pliku: {rel_path}")
+                            return False
+
+            print("✅ Weryfikacja zakończona pomyślnie")
             return True
 
         except Exception as e:
-            print(f"❌ Błąd podczas wgrywania firmware: {e}")
-            return False
-
-    def deploy(self, system_type: str):
-        """Główna metoda wdrażania"""
-        self.system_type = system_type
-
-        print(f"🚀 Rozpoczynam wdrażanie systemu: {system_type}")
-
-        if system_type == "micropython":
-            return self.setup_micropython()
-        elif system_type == "arduino":
-            return self.setup_arduino()
-        elif system_type == "c_sdk":
-            return self.setup_c_sdk()
-        else:
-            print(f"❌ Nieobsługiwany typ systemu: {system_type}")
+            print(f"❌ Błąd podczas weryfikacji: {e}")
             return False
 
 
 def main():
-    deployer = PicoDeployer()
+    parser = argparse.ArgumentParser(description='Narzędzie do wdrażania kodu na Raspberry Pi Pico')
+    parser.add_argument('source', help='Ścieżka do pliku lub katalogu z kodem')
+    parser.add_argument('--main', default='main.py', help='Nazwa głównego pliku (domyślnie: main.py)')
+    parser.add_argument('--verify', action='store_true', help='Weryfikuj wdrożenie')
 
-    print("Wybierz system do wdrożenia:")
-    print("1. MicroPython")
-    print("2. Arduino")
-    print("3. C/C++ SDK")
+    args = parser.parse_args()
 
-    choice = input("Wybór (1-3): ")
+    deployer = PicoCustomDeployer()
+    result = deployer.deploy_code(args.source, args.main)
 
-    if choice == "1":
-        deployer.deploy("micropython")
-    elif choice == "2":
-        deployer.deploy("arduino")
-    elif choice == "3":
-        deployer.deploy("c_sdk")
-    else:
-        print("❌ Nieprawidłowy wybór")
+    if result and args.verify:
+        deployer.verify_deployment(Path(args.source))
 
 
 if __name__ == "__main__":

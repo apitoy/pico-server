@@ -1,5 +1,7 @@
 # Pico USB Audio Card
 
+[Raspberry_pi_pico_w_pinout.webp](Raspberry_pi_pico_w_pinout.webp)
+
 Emulator karty dźwiękowej USB na Raspberry Pi Pico.
 
 ## Wymagania sprzętowe:
@@ -98,7 +100,13 @@ manager.play_file("music.wav")
 ```bash
 python disc.py
 python disc_check.py /run/media/tom/RPI-RP2
-python deploy.py ./src --type code
+python deploy.py ./src --main main.py
+python firmware.py
+
+python deploy.py ./src --main code.py
+python deploy_circuit.py ./src --type code
+
+
 cat /run/media/tom/CIRCUITPY/boot_out.txt
 pico-mount-fix.sh
 pico_mount_repair.py
